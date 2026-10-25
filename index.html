@@ -1,32 +1,18 @@
 <html lang="en-us">
 <head>
+    <!-- Sửa lỗi đen màn hình và tắt tiếng an toàn -->
     <script type="application/javascript">
-        // 1. Chặn toàn bộ Web Audio API (nguồn phát âm thanh của WebAssembly/SDL2)
-        window.AudioContext = window.webkitAudioContext = function() {
-            return {
-                createGain: () => ({ gain: { value: 0 }, connect: () => {} }),
-                createBufferSource: () => ({ start: () => {}, stop: () => {}, connect: () => {} }),
-                destination: {},
-                state: "suspended",
-                suspend: () => Promise.resolve(),
-                resume: () => Promise.resolve(),
-                close: () => Promise.resolve()
+        const originalAudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (originalAudioCtx) {
+            const originalCreateGain = originalAudioCtx.prototype.createGain;
+            originalAudioCtx.prototype.createGain = function() {
+                const gainNode = originalCreateGain.call(this);
+                gainNode.gain.value = 0;
+                return gainNode;
             };
-        };
-
-        // 2. Chặn các thẻ audio/video nếu game cố tình tạo ra
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                mutation.addedNodes.forEach((node) => {
-                    if (node.tagName === 'AUDIO' || node.tagName === 'VIDEO') {
-                        node.muted = true;
-                        node.remove();
-                    }
-                });
-            });
-        });
-        observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
     </script>
+
 <script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
 
 print("""
@@ -178,7 +164,6 @@ function show_infobox() {
             z-index: 999999;
         }
 
-        /* Tối ưu Canvas tự động phóng to vừa khít tỉ lệ màn hình */
         canvas.emscripten {
             border: 0px none !important;
             background-color: #000000;
@@ -195,23 +180,19 @@ function show_infobox() {
             right: 0;
         }
 
-        /* Ẩn các giao diện phụ (Console, Debug UI) */
         #pyconsole, #system, #box, #crt, #dlg, .topright, .bottomright, .center, .trinfo, .framed, #transfer {
             display: none !important;
         }
     </style>
 
     <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
-
 </head>
 
 <body>
-
     <canvas class="emscripten" id="canvas" width="1px" height="1px" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
     <canvas class="emscripten" id="canvas3d" width="1280px" height="720px" oncontextmenu="event.preventDefault()" tabindex=1 hidden></canvas>
 
     <div id="infobox">Loading, please wait ...</div>
-
     <div id=html></div>
 
     <div id="pyconsole">
@@ -236,7 +217,6 @@ function show_infobox() {
         if (typeof system !== 'undefined') system.hidden = debug_hidden;
         if (typeof info !== 'undefined') info.hidden = debug_hidden;
         if (typeof box !== 'undefined') box.hidden = debug_hidden;
-
         show_infobox();
     }
 
@@ -251,13 +231,11 @@ function show_infobox() {
     }
 
     function info_inline(data){ document.getElementById("info").innerHTML = data }
-
     function info_online(url) {
         fetch(url).then((response) => response.text()).then((html) => { info_inline(html); }).catch((error) => { console.warn(error); });
     }
 
     function frame_online(url) { window.frames["iframe"].location = url; }
     </script>
-
 </body>
 </html>
