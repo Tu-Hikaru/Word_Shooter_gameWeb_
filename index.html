@@ -1,19 +1,25 @@
 <html lang="en-us">
 <head>
-    <!-- ĐÃ THÊM: Chặn toàn bộ âm thanh (AudioContext & Web Audio API) -->
+    <!-- ÉP TẮT ÂM THANH TRỰC TIẾP TỪ TRÌNH DUYỆT -->
     <script type="application/javascript">
-        // Chặn AudioContext tiêu chuẩn
-        const oldAudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (oldAudioCtx) {
+        // Chặn và vô hiệu hóa tất cả các luồng âm thanh AudioContext
+        const observer = new MutationObserver(() => {
+            document.querySelectorAll('audio, video').forEach(el => {
+                el.muted = true;
+                el.pause();
+            });
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+
+        // Ghi đè AudioContext để cấm phát ra loa
+        if (window.AudioContext || window.webkitAudioContext) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
             window.AudioContext = window.webkitAudioContext = function() {
-                const ctx = new oldAudioCtx();
-                ctx.suspend(); // Tạm dừng mọi âm thanh
+                const ctx = new AudioCtx();
+                ctx.suspend();
                 return ctx;
             };
         }
-        // Chặn SDL2 Audio output nếu được khởi tạo ngầm
-        window.SDL = window.SDL || {};
-        window.SDL.audioPreInit = function() { return false; };
     </script>
 
 <script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
