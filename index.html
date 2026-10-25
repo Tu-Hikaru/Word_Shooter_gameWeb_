@@ -1,5 +1,15 @@
 <html lang="en-us"><script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
-
+<script>
+  // Chặn khởi tạo AudioContext của trình duyệt để vô hiệu hóa âm thanh từ game
+  const oldAudioContext = window.AudioContext || window.webkitAudioContext;
+  if (oldAudioContext) {
+    window.AudioContext = function() {
+      const ctx = new oldAudioContext();
+      ctx.suspend(); // Tạm dừng mọi âm thanh phát ra
+      return ctx;
+    };
+  }
+</script>
 print("""
 Loading web_game from web_game.apk
     Pygbag Version : 0.9.3
