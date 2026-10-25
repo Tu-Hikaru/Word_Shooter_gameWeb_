@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,149 +22,26 @@
     >
 
     <!-- ==================================================
-         AUDIO MUTE
-         Phải chạy trước khi tải Pygbag.
+         AUDIO MUTE AN TOÀN (Không lỗi màn hình đen, không rè)
          ================================================== -->
     <script>
     (() => {
         "use strict";
-
-        // 1. Chặn Web Audio bằng GainNode có gain = 0.
-        // Không sửa buffer âm thanh, không thay callback SDL2.
-        const AudioContextClass =
-            window.AudioContext || window.webkitAudioContext;
-
-        if (AudioContextClass && window.AudioNode) {
-            const nodeProto = window.AudioNode.prototype;
-
-            if (!nodeProto.__webGameMuteInstalled) {
-                const originalConnect = nodeProto.connect;
-
-                Object.defineProperty(
-                    nodeProto,
-                    "__webGameMuteInstalled",
-                    { value: true }
-                );
-
-                nodeProto.connect = function (
-                    destination,
-                    ...args
-                ) {
-                    try {
-                        const context = this.context;
-
-                        if (
-                            context &&
-                            destination === context.destination &&
-                            typeof context.createGain === "function"
-                        ) {
-                            const muteGain = context.createGain();
-                            muteGain.gain.value = 0;
-
-                            originalConnect.call(
-                                this,
-                                muteGain,
-                                ...args
-                            );
-
-                            originalConnect.call(
-                                muteGain,
-                                destination
-                            );
-
-                            return muteGain;
-                        }
-                    } catch (error) {
-                        console.warn(
-                            "[GameMute] Web Audio hook error:",
-                            error
-                        );
-                    }
-
-                    return originalConnect.call(
-                        this,
-                        destination,
-                        ...args
-                    );
-                };
-            }
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+            // Chặn lệnh kích hoạt âm thanh của game, giữ AudioContext ở trạng thái im lặng
+            AudioCtx.prototype.resume = function() {
+                try {
+                    this.suspend();
+                } catch (e) {}
+                return Promise.resolve();
+            };
         }
-
-        // 2. Tắt các thẻ audio/video.
-        function muteMedia(element) {
-            if (!element || !element.tagName) return;
-
-            const tag = element.tagName.toUpperCase();
-
-            if (tag === "AUDIO" || tag === "VIDEO") {
-                element.muted = true;
-                element.defaultMuted = true;
-                element.volume = 0;
-            }
-        }
-
-        function scanMedia(root) {
-            if (!root) return;
-
-            muteMedia(root);
-
-            if (typeof root.querySelectorAll === "function") {
-                root.querySelectorAll("audio, video")
-                    .forEach(muteMedia);
-            }
-        }
-
-        function installMediaMute() {
-            scanMedia(document);
-
-            if (!document.documentElement) return;
-
-            const observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const node of mutation.addedNodes) {
-                        scanMedia(node);
-                    }
-
-                    if (
-                        mutation.type === "attributes" &&
-                        mutation.target
-                    ) {
-                        muteMedia(mutation.target);
-                    }
-                }
-            });
-
-            observer.observe(document.documentElement, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ["src", "autoplay"]
-            });
-
-            // Giữ observer tồn tại trong suốt phiên chơi.
-            window.__gameMuteObserver = observer;
-        }
-
-        if (document.readyState === "loading") {
-            document.addEventListener(
-                "DOMContentLoaded",
-                installMediaMute,
-                { once: true }
-            );
-        } else {
-            installMediaMute();
-        }
-
-        document.addEventListener("play", (event) => {
-            muteMedia(event.target);
-        }, true);
-
-        console.info("[GameMute] Mute hooks installed.");
     })();
     </script>
 
     <!-- ==================================================
-         PYG BAG / PYTHON RUNTIME
+         PYGBAG / PYTHON RUNTIME
          ================================================== -->
     <script
         src="https://pygame-web.github.io/cdn/0.9.3/pythons.js"
@@ -264,7 +140,7 @@ asyncio.run(custom_site())
 # --></script>
 
     <!-- ==================================================
-         PYG BAG CONFIGURATION
+         PYGBAG CONFIGURATION
          ================================================== -->
     <script>
         var config = {
@@ -450,6 +326,7 @@ asyncio.run(custom_site())
             show_infobox();
         }
 
+        class="emscripten"
         function custom_prerun() {
             console.log(__FILE__, "custom_prerun");
         }
