@@ -3,11 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0,
-        maximum-scale=1.0, user-scalable=no"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     >
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -22,80 +20,6 @@
     >
 
     <!-- ==================================================
-         GIẢI PHÁP TỐI ƯU TRIỆT ĐỂ: LÀM PHẲNG BỘ ĐỆM ÂM THANH THÀNH 0
-         Không đen màn hình, không rè, tắt tiếng 100%
-         ================================================== -->
-    <script>
-    (() => {
-        "use strict";
-
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-            // 1. Intercept decodeAudioData: Biến mọi file nhạc/hiệu ứng của game thành im lặng ngay khi giải mã
-            const origDecode = AudioCtx.prototype.decodeAudioData;
-            if (origDecode) {
-                AudioCtx.prototype.decodeAudioData = function(audioData, successCallback, errorCallback) {
-                    return origDecode.call(this, audioData, function(buffer) {
-                        try {
-                            for (let i = 0; i < buffer.numberOfChannels; i++) {
-                                buffer.getChannelData(i).fill(0); // Làm phẳng dữ liệu thành 0 (Im lặng tuyệt đối)
-                            }
-                        } catch (e) {}
-                        if (successCallback) successCallback(buffer);
-                    }, errorCallback);
-                };
-            }
-
-            // 2. Intercept createBuffer: Chặn cả âm thanh được tạo tự động trong code
-            const origCreateBuffer = AudioCtx.prototype.createBuffer;
-            if (origCreateBuffer) {
-                AudioCtx.prototype.createBuffer = function(numberOfChannels, length, sampleRate) {
-                    const buffer = origCreateBuffer.call(this, numberOfChannels, length, sampleRate);
-                    try {
-                        for (let i = 0; i < buffer.numberOfChannels; i++) {
-                            buffer.getChannelData(i).fill(0);
-                        }
-                    } catch (e) {}
-                    return buffer;
-                };
-            }
-        }
-
-        // 3. Khóa cứng mọi thẻ Audio/Video HTML5 nếu có phát sinh
-        const origPlay = HTMLMediaElement.prototype.play;
-        HTMLMediaElement.prototype.play = function() {
-            this.muted = true;
-            this.volume = 0;
-            return origPlay.apply(this, arguments);
-        };
-
-        const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node && node.tagName) {
-                        const tag = node.tagName.toUpperCase();
-                        if (tag === "AUDIO" || tag === "VIDEO") {
-                            node.muted = true;
-                            node.volume = 0;
-                        }
-                        if (typeof node.querySelectorAll === "function") {
-                            node.querySelectorAll("audio, video").forEach(el => {
-                                el.muted = true;
-                                el.volume = 0;
-                            });
-                        }
-                    }
-                }
-            }
-        });
-
-        if (document.documentElement) {
-            observer.observe(document.documentElement, { childList: true, subtree: true });
-        }
-    })();
-    </script>
-
-    <!-- ==================================================
          PYGBAG / PYTHON RUNTIME
          ================================================== -->
     <script
@@ -105,7 +29,7 @@
         data-python="python3.12"
         data-LINES="42"
         data-COLUMNS="132"
-        data-os="vtx,snd,gui"
+        data-os="vtx,gui"
         async
         defer
     >#<!--
