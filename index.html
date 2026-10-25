@@ -22,20 +22,68 @@
     >
 
     <!-- ==================================================
-         AUDIO MUTE AN TOÀN (Không lỗi màn hình đen, không rè)
+         AUDIO MUTE TRIỆT ĐỂ VÀ AN TOÀN (Đã sửa lỗi cú pháp)
          ================================================== -->
     <script>
     (() => {
         "use strict";
+
+        // 1. Chặn toàn bộ luồng Web Audio API qua bộ lọc âm lượng bằng 0
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-            // Chặn lệnh kích hoạt âm thanh của game, giữ AudioContext ở trạng thái im lặng
-            AudioCtx.prototype.resume = function() {
+        if (AudioCtx && window.AudioNode) {
+            const origConnect = AudioNode.prototype.connect;
+            const origCreateGain = AudioCtx.prototype.createGain;
+
+            AudioNode.prototype.connect = function(destination, outputIndex, inputIndex) {
                 try {
-                    this.suspend();
-                } catch (e) {}
-                return Promise.resolve();
+                    if (destination && destination instanceof AudioDestinationNode) {
+                        const ctx = this.context;
+                        if (ctx && origCreateGain) {
+                            if (!ctx.__silentGainNode) {
+                                ctx.__silentGainNode = origCreateGain.call(ctx);
+                                ctx.__silentGainNode.gain.value = 0;
+                                origConnect.call(ctx.__silentGainNode, destination);
+                            }
+                            return origConnect.call(this, ctx.__silentGainNode, outputIndex, inputIndex);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Audio mute hook warning:", e);
+                }
+                return origConnect.call(this, destination, outputIndex, inputIndex);
             };
+        }
+
+        // 2. Chặn mọi thẻ Audio/Video HTML5 nếu game tự phát sinh
+        const origPlay = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function() {
+            this.muted = true;
+            this.volume = 0;
+            return origPlay.apply(this, arguments);
+        };
+
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node && node.tagName) {
+                        const tag = node.tagName.toUpperCase();
+                        if (tag === "AUDIO" || tag === "VIDEO") {
+                            node.muted = true;
+                            node.volume = 0;
+                        }
+                        if (typeof node.querySelectorAll === "function") {
+                            node.querySelectorAll("audio, video").forEach(el => {
+                                el.muted = true;
+                                el.volume = 0;
+                            });
+                        }
+                    }
+                }
+            }
+        });
+
+        if (document.documentElement) {
+            observer.observe(document.documentElement, { childList: true, subtree: true });
         }
     })();
     </script>
@@ -326,7 +374,6 @@ asyncio.run(custom_site())
             show_infobox();
         }
 
-        class="emscripten"
         function custom_prerun() {
             console.log(__FILE__, "custom_prerun");
         }
