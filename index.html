@@ -1,16 +1,36 @@
 <html lang="en-us">
 <head>
-    <!-- Sửa lỗi đen màn hình và tắt tiếng an toàn -->
+    <!-- CHẶN ÂM THANH TRIỆT ĐỂ BẰNG CÁCH CAN THIỆP ĐƯỜNG TRUYỀN ÂM THANH -->
     <script type="application/javascript">
-        const originalAudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (originalAudioCtx) {
-            const originalCreateGain = originalAudioCtx.prototype.createGain;
-            originalAudioCtx.prototype.createGain = function() {
-                const gainNode = originalCreateGain.call(this);
-                gainNode.gain.value = 0;
-                return gainNode;
+        (function() {
+            // Chặn tất cả các luồng âm thanh trước khi đổ ra loa (destination) và ép về âm lượng 0
+            const originalConnect = AudioNode.prototype.connect;
+            AudioNode.prototype.connect = function(destination, outputIndex, inputIndex) {
+                if (destination && destination.constructor && destination.constructor.name === 'AudioDestinationNode') {
+                    let ctx = this.context;
+                    if (!ctx._silentGain) {
+                        ctx._silentGain = ctx.createGain();
+                        ctx._silentGain.gain.value = 0;
+                        originalConnect.call(ctx._silentGain, destination);
+                    }
+                    return originalConnect.call(this, ctx._silentGain, outputIndex, inputIndex);
+                }
+                return originalConnect.call(this, destination, outputIndex, inputIndex);
             };
-        }
+
+            // Dự phòng: Khóa luôn các thẻ audio/video HTML5 nếu có
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.tagName === 'AUDIO' || node.tagName === 'VIDEO') {
+                            node.muted = true;
+                            node.volume = 0;
+                        }
+                    });
+                });
+            });
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+        })();
     </script>
 
 <script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
