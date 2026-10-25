@@ -1,6 +1,56 @@
 <html lang="en-us">
 <head>
-<script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,gui" async defer>#<!--
+    <script type="application/javascript">
+        // GIẢI PHÁP CODE TRIỆT ĐỂ: Biến toàn bộ âm thanh thành tín hiệu rỗng (0)
+        // Không làm sập game (không màn hình đen), không gây rè âm thanh.
+        (function() {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) {
+                // 1. Chặn và làm sạch mọi file âm thanh được decode (nhạc nền, hiệu ứng)
+                const origDecode = AudioCtx.prototype.decodeAudioData;
+                if (origDecode) {
+                    AudioCtx.prototype.decodeAudioData = function(audioData, successCallback, errorCallback) {
+                        return origDecode.call(this, audioData, function(buffer) {
+                            for (let i = 0; i < buffer.numberOfChannels; i++) {
+                                buffer.getChannelData(i).fill(0); // Làm phẳng tín hiệu âm thanh thành 0
+                            }
+                            if (successCallback) successCallback(buffer);
+                        }, errorCallback);
+                    };
+                }
+
+                // 2. Chặn luồng phát trực tiếp của SDL2 bằng cách lấp đầy dữ liệu 0
+                const origCreateSP = AudioCtx.prototype.createScriptProcessor;
+                if (origCreateSP) {
+                    AudioCtx.prototype.createScriptProcessor = function(bufferSize, numIn, numOut) {
+                        const node = origCreateSP.call(this, bufferSize, numIn, numOut);
+                        node.onaudioprocess = function(e) {
+                            const output = e.outputBuffer;
+                            for (let ch = 0; ch < output.numberOfChannels; ch++) {
+                                output.getChannelData(ch).fill(0);
+                            }
+                        };
+                        return node;
+                    };
+                }
+            }
+
+            // 3. Khóa các thẻ audio/video ẩn nếu game tự sinh ra
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.tagName === 'AUDIO' || node.tagName === 'VIDEO') {
+                            node.muted = true;
+                            node.pause();
+                        }
+                    });
+                });
+            });
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+        })();
+    </script>
+
+<script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
 
 print("""
 Loading web_game from web_game.apk
@@ -170,59 +220,59 @@ function show_infobox() {
         #pyconsole, #system, #box, #crt, #dlg, .topright, .bottomright, .center, .trinfo, .framed, #transfer {
             display: none !important;
         }
-      </style>
+    </style>
 
-      <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
+    <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
 </head>
 
 <body>
-      <canvas class="emscripten" id="canvas" width="1px" height="1px" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
-      <canvas class="emscripten" id="canvas3d" width="1280px" height="720px" oncontextmenu="event.preventDefault()" tabindex=1 hidden></canvas>
+    <canvas class="emscripten" id="canvas" width="1px" height="1px" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
+    <canvas class="emscripten" id="canvas3d" width="1280px" height="720px" oncontextmenu="event.preventDefault()" tabindex=1 hidden></canvas>
 
-      <div id="infobox">Loading, please wait ...</div>
-      <div id=html></div>
+    <div id="infobox">Loading, please wait ...</div>
+    <div id=html></div>
 
-      <div id="pyconsole">
-          <div id="terminal" tabIndex=1 align="left"></div>
-      </div>
+    <div id="pyconsole">
+        <div id="terminal" tabIndex=1 align="left"></div>
+    </div>
 
-      <div id=crt class=bottomright>
-          <div id="system" hidden></div>
-          <div id="box" hidden=true>
-              <div id="info"></div>
-              <iframe id="iframe" name="iframe" src="https://pygame-web.github.io/cdn/0.9.3/empty.html"></iframe>
-          </div>
-      </div>
+    <div id=crt class=bottomright>
+        <div id="system" hidden></div>
+        <div id="box" hidden=true>
+            <div id="info"></div>
+            <iframe id="iframe" name="iframe" src="https://pygame-web.github.io/cdn/0.9.3/empty.html"></iframe>
+        </div>
+    </div>
 
-      <script type="application/javascript">
-      globalThis.__canvas_resized = (self, ecw, ech) => {
-          console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
-      }
+    <script type="application/javascript">
+    globalThis.__canvas_resized = (self, ecw, ech) => {
+        console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
+    }
 
-      async function custom_onload(debug_hidden) {
-          if (typeof pyconsole !== 'undefined') pyconsole.hidden = debug_hidden;
-          if (typeof system !== 'undefined') system.hidden = debug_hidden;
-          if (typeof info !== 'undefined') info.hidden = debug_hidden;
-          if (typeof box !== 'undefined') box.hidden = debug_hidden;
-          show_infobox();
-      }
+    async function custom_onload(debug_hidden) {
+        if (typeof pyconsole !== 'undefined') pyconsole.hidden = debug_hidden;
+        if (typeof system !== 'undefined') system.hidden = debug_hidden;
+        if (typeof info !== 'undefined') info.hidden = debug_hidden;
+        if (typeof box !== 'undefined') box.hidden = debug_hidden;
+        show_infobox();
+    }
 
-      function custom_prerun(){ console.log(__FILE__, "custom_prerun") }
-      function custom_postrun(){ console.log(__FILE__, "custom_postrun") }
+    function custom_prerun(){ console.log(__FILE__, "custom_prerun") }
+    function custom_postrun(){ console.log(__FILE__, "custom_postrun") }
 
-      function debug() {
-          python.config.debug = true
-          custom_onload(false)
-          Module.PyRun_SimpleString("shell.uptime()")
-          window_resize()
-      }
+    function debug() {
+        python.config.debug = true
+        custom_onload(false)
+        Module.PyRun_SimpleString("shell.uptime()")
+        window_resize()
+    }
 
-      function info_inline(data){ document.getElementById("info").innerHTML = data }
-      function info_online(url) {
-          fetch(url).then((response) => response.text()).then((html) => { info_inline(html); }).catch((error) => { console.warn(error); });
-      }
+    function info_inline(data){ document.getElementById("info").innerHTML = data }
+    function info_online(url) {
+        fetch(url).then((response) => response.text()).then((html) => { info_inline(html); }).catch((error) => { console.warn(error); });
+    }
 
-      function frame_online(url) { window.frames["iframe"].location = url; }
-      </script>
+    function frame_online(url) { window.frames["iframe"].location = url; }
+    </script>
 </body>
 </html>
