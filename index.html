@@ -1,70 +1,183 @@
-<html lang="en-us">
+
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <script type="application/javascript">
-        // GIẢI PHÁP CODE TRIỆT ĐỂ: Biến toàn bộ âm thanh thành tín hiệu rỗng (0)
-        // Không làm sập game (không màn hình đen), không gây rè âm thanh.
-        (function() {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (AudioCtx) {
-                // 1. Chặn và làm sạch mọi file âm thanh được decode (nhạc nền, hiệu ứng)
-                const origDecode = AudioCtx.prototype.decodeAudioData;
-                if (origDecode) {
-                    AudioCtx.prototype.decodeAudioData = function(audioData, successCallback, errorCallback) {
-                        return origDecode.call(this, audioData, function(buffer) {
-                            for (let i = 0; i < buffer.numberOfChannels; i++) {
-                                buffer.getChannelData(i).fill(0); // Làm phẳng tín hiệu âm thanh thành 0
-                            }
-                            if (successCallback) successCallback(buffer);
-                        }, errorCallback);
-                    };
-                }
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-                // 2. Chặn luồng phát trực tiếp của SDL2 bằng cách lấp đầy dữ liệu 0
-                const origCreateSP = AudioCtx.prototype.createScriptProcessor;
-                if (origCreateSP) {
-                    AudioCtx.prototype.createScriptProcessor = function(bufferSize, numIn, numOut) {
-                        const node = origCreateSP.call(this, bufferSize, numIn, numOut);
-                        node.onaudioprocess = function(e) {
-                            const output = e.outputBuffer;
-                            for (let ch = 0; ch < output.numberOfChannels; ch++) {
-                                output.getChannelData(ch).fill(0);
-                            }
-                        };
-                        return node;
-                    };
-                }
-            }
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0,
+        maximum-scale=1.0, user-scalable=no"
+    >
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
 
-            // 3. Khóa các thẻ audio/video ẩn nếu game tự sinh ra
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.tagName === 'AUDIO' || node.tagName === 'VIDEO') {
-                            node.muted = true;
-                            node.pause();
+    <title>web_game</title>
+
+    <link
+        rel="icon"
+        type="image/png"
+        href="favicon.png"
+        sizes="16x16"
+    >
+
+    <!-- ==================================================
+         AUDIO MUTE
+         Phải chạy trước khi tải Pygbag.
+         ================================================== -->
+    <script>
+    (() => {
+        "use strict";
+
+        // 1. Chặn Web Audio bằng GainNode có gain = 0.
+        // Không sửa buffer âm thanh, không thay callback SDL2.
+        const AudioContextClass =
+            window.AudioContext || window.webkitAudioContext;
+
+        if (AudioContextClass && window.AudioNode) {
+            const nodeProto = window.AudioNode.prototype;
+
+            if (!nodeProto.__webGameMuteInstalled) {
+                const originalConnect = nodeProto.connect;
+
+                Object.defineProperty(
+                    nodeProto,
+                    "__webGameMuteInstalled",
+                    { value: true }
+                );
+
+                nodeProto.connect = function (
+                    destination,
+                    ...args
+                ) {
+                    try {
+                        const context = this.context;
+
+                        if (
+                            context &&
+                            destination === context.destination &&
+                            typeof context.createGain === "function"
+                        ) {
+                            const muteGain = context.createGain();
+                            muteGain.gain.value = 0;
+
+                            originalConnect.call(
+                                this,
+                                muteGain,
+                                ...args
+                            );
+
+                            originalConnect.call(
+                                muteGain,
+                                destination
+                            );
+
+                            return muteGain;
                         }
-                    });
-                });
+                    } catch (error) {
+                        console.warn(
+                            "[GameMute] Web Audio hook error:",
+                            error
+                        );
+                    }
+
+                    return originalConnect.call(
+                        this,
+                        destination,
+                        ...args
+                    );
+                };
+            }
+        }
+
+        // 2. Tắt các thẻ audio/video.
+        function muteMedia(element) {
+            if (!element || !element.tagName) return;
+
+            const tag = element.tagName.toUpperCase();
+
+            if (tag === "AUDIO" || tag === "VIDEO") {
+                element.muted = true;
+                element.defaultMuted = true;
+                element.volume = 0;
+            }
+        }
+
+        function scanMedia(root) {
+            if (!root) return;
+
+            muteMedia(root);
+
+            if (typeof root.querySelectorAll === "function") {
+                root.querySelectorAll("audio, video")
+                    .forEach(muteMedia);
+            }
+        }
+
+        function installMediaMute() {
+            scanMedia(document);
+
+            if (!document.documentElement) return;
+
+            const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        scanMedia(node);
+                    }
+
+                    if (
+                        mutation.type === "attributes" &&
+                        mutation.target
+                    ) {
+                        muteMedia(mutation.target);
+                    }
+                }
             });
-            observer.observe(document.documentElement, { childList: true, subtree: true });
-        })();
+
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ["src", "autoplay"]
+            });
+
+            // Giữ observer tồn tại trong suốt phiên chơi.
+            window.__gameMuteObserver = observer;
+        }
+
+        if (document.readyState === "loading") {
+            document.addEventListener(
+                "DOMContentLoaded",
+                installMediaMute,
+                { once: true }
+            );
+        } else {
+            installMediaMute();
+        }
+
+        document.addEventListener("play", (event) => {
+            muteMedia(event.target);
+        }, true);
+
+        console.info("[GameMute] Mute hooks installed.");
+    })();
     </script>
 
-<script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
-
-print("""
-Loading web_game from web_game.apk
-    Pygbag Version : 0.9.3
-    Template Version : 0.9.3
-    Python  : 3.12
-    CDN URL : https://pygame-web.github.io/cdn/0.9.3/
-    Screen  : 1280x720
-    Title   : web_game
-    Folder  : web_game
-    Authors : pgw
-    SPDX-License-Identifier: cookiecutter.spdx
-
-""")
+    <!-- ==================================================
+         PYG BAG / PYTHON RUNTIME
+         ================================================== -->
+    <script
+        src="https://pygame-web.github.io/cdn/0.9.3/pythons.js"
+        type="module"
+        id="site"
+        data-python="python3.12"
+        data-LINES="42"
+        data-COLUMNS="132"
+        data-os="vtx,snd,gui"
+        async
+        defer
+    >#<!--
 
 import sys
 import asyncio
@@ -72,207 +185,302 @@ import platform
 import json
 from pathlib import Path
 
-# do not rename
 async def custom_site():
     import embed
+
     platform.document.body.style.background = "#000000"
 
-    platform.window.transfer.hidden = true
+    platform.window.transfer.hidden = True
     platform.window.canvas.style.visibility = "visible"
 
     bundle = "web_game"
-
     appdir = Path(f"/data/data/{bundle}")
-    appdir.mkdir()
+    appdir.mkdir(parents=True, exist_ok=True)
 
-    if platform.window.location.host.find('.itch.zone')>0:
+    if ".itch.zone" in platform.window.location.host:
         import zipfile
+
         async with platform.fopen("web_game.apk", "rb") as archive:
             with zipfile.ZipFile(archive) as zip_ref:
                 zip_ref.extractall(appdir.as_posix())
     else:
         import tarfile
+
         async with platform.fopen("web_game.tar.gz", "rb") as archive:
-            tar = tarfile.open(fileobj=archive, mode="r:gz")
-            tar.extractall(path=appdir.as_posix(), filter='tar')
-            tar.close()
+            with tarfile.open(
+                fileobj=archive,
+                mode="r:gz"
+            ) as tar:
+                tar.extractall(
+                    path=appdir.as_posix(),
+                    filter="tar"
+                )
 
-    platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
+    platform.run_main(
+        PyConfig,
+        loaderhome=appdir / "assets",
+        loadermain=None
+    )
 
-    while embed.counter()<0:
-        await asyncio.sleep(.1)
+    while embed.counter() < 0:
+        await asyncio.sleep(0.1)
 
     main = appdir / "assets" / "main.py"
 
     if not platform.window.MM.UME:
         __import__(__name__).__file__ = main
 
-        msg  = "Ready to start ! Please click/touch page"
+        msg = "Ready to start! Please click/touch page"
         platform.window.infobox.innerText = msg
-        print("\n"*4, f"    * Waiting for media user engagement. {msg} *" , "\n"*4)
+
+        print("\n" * 4, f"* {msg} *", "\n" * 4)
 
         while not platform.window.MM.UME:
-            await asyncio.sleep(.1)
+            await asyncio.sleep(0.1)
 
-    await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
+    await TopLevel_async_handler.start_toplevel(
+        platform.shell,
+        console=window.python.config.debug
+    )
 
     __import__(__name__).__file__ = main
 
     def ui_callback(pkg):
-        platform.window.infobox.innerText = f"installing {pkg}"
+        platform.window.infobox.innerText = f"Installing {pkg}"
 
     await shell.source(main, callback=ui_callback)
 
     platform.window.infobox.style.display = "none"
     platform.window.config.gui_divider = 1
     platform.window.window_resize()
-    print("default.tmpl: done")
 
+    print("default.tmpl: done")
     shell.interactive()
 
-asyncio.run( custom_site() )
+asyncio.run(custom_site())
 
 # BEGIN BLOCK
 # =============================================================================
 # --></script>
 
-<script type="application/javascript">
-// END BLOCK
+    <!-- ==================================================
+         PYG BAG CONFIGURATION
+         ================================================== -->
+    <script>
+        var config = {
+            xtermjs: "1",
+            _sdl2: "canvas",
+            user_canvas: 0,
+            user_canvas_managed: 0,
+            gui_divider: 1,
+            ume_block: 1,
+            can_close: 0,
+            archive: "web_game",
+            gui_debug: 0,
+            cdn: "https://pygame-web.github.io/cdn/0.9.3/",
+            autorun: 0,
+            PYBUILD: "3.12",
+            fb_ar: 16 / 9,
+            fb_width: "1280",
+            fb_height: "720"
+        };
 
-config = {
-    xtermjs : "1" ,
-    _sdl2 : "canvas",
-    user_canvas : 0,
-    user_canvas_managed : 0,
-    gui_divider : 1,
-    ume_block : 1,
-    can_close : 0,
-    archive : "web_game",
-    gui_debug : 0,
-    cdn : "https://pygame-web.github.io/cdn/0.9.3/",
-    autorun : 0,
-    PYBUILD : "3.12",
-    fb_ar   :  1.7777777777777777,
-    fb_width : "1280",
-    fb_height : "720"
-}
+        function show_infobox() {
+            const infobox = document.getElementById("infobox");
+            if (!infobox) return;
 
-function show_infobox() {
-    infobox.style.display = "block";
-    const w = infobox.offsetWidth;
-    const h = infobox.offsetHeight;
-    const left = (window.innerWidth - w) / 2;
-    const top = (window.innerHeight - h) / 2;
-    infobox.style.left = left + "px";
-    infobox.style.top = top + "px";
-}
+            infobox.style.display = "block";
 
-</script>
+            const width = infobox.offsetWidth;
+            const height = infobox.offsetHeight;
 
-    <title>web_game</title>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes"/>
+            infobox.style.left =
+                (window.innerWidth - width) / 2 + "px";
 
-    <link rel="icon" type="image/png" href="favicon.png" sizes="16x16">
+            infobox.style.top =
+                (window.innerHeight - height) / 2 + "px";
+        }
+    </script>
 
+    <!-- ==================================================
+         PAGE STYLE
+         ================================================== -->
     <style>
-        html, body {
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
             margin: 0;
             padding: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
-            background-color: #000000 !important;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background: #000;
+        }
+
+        body {
+            position: fixed;
+            inset: 0;
         }
 
         #infobox {
             position: fixed;
-            background: #005EFF;
-            color: #FFFFFF;
-            font-weight: bold;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             padding: 12px 24px;
+            max-width: calc(100vw - 32px);
+            background: #005eff;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: center;
             border-radius: 8px;
             z-index: 999999;
         }
 
         canvas.emscripten {
-            border: 0px none !important;
-            background-color: #000000;
-            width: 100vw !important;
-            height: 100vh !important;
+            position: absolute;
+            inset: 0;
+            display: block;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            border: 0 !important;
+            background: #000;
             object-fit: contain;
             z-index: 5;
-            padding: 0;
-            margin: 0 auto;
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            right: 0;
         }
 
-        #pyconsole, #system, #box, #crt, #dlg, .topright, .bottomright, .center, .trinfo, .framed, #transfer {
+        #pyconsole,
+        #system,
+        #box,
+        #crt,
+        #dlg,
+        .topright,
+        .bottomright,
+        .center,
+        .trinfo,
+        .framed,
+        #transfer {
             display: none !important;
         }
     </style>
 
-    <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
+    <!-- ==================================================
+         BROWSERFS
+         ================================================== -->
+    <script
+        src="https://pygame-web.github.io/cdn/0.9.3/browserfs.min.js"
+    ></script>
 </head>
 
 <body>
-    <canvas class="emscripten" id="canvas" width="1px" height="1px" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
-    <canvas class="emscripten" id="canvas3d" width="1280px" height="720px" oncontextmenu="event.preventDefault()" tabindex=1 hidden></canvas>
+    <canvas
+        class="emscripten"
+        id="canvas"
+        width="1280"
+        height="720"
+        oncontextmenu="event.preventDefault()"
+        tabindex="1"
+    ></canvas>
+
+    <canvas
+        class="emscripten"
+        id="canvas3d"
+        width="1280"
+        height="720"
+        oncontextmenu="event.preventDefault()"
+        tabindex="1"
+        hidden
+    ></canvas>
 
     <div id="infobox">Loading, please wait ...</div>
-    <div id=html></div>
+    <div id="html"></div>
 
     <div id="pyconsole">
-        <div id="terminal" tabIndex=1 align="left"></div>
+        <div id="terminal" tabindex="1" align="left"></div>
     </div>
 
-    <div id=crt class=bottomright>
+    <div id="crt" class="bottomright">
         <div id="system" hidden></div>
-        <div id="box" hidden=true>
+
+        <div id="box" hidden>
             <div id="info"></div>
-            <iframe id="iframe" name="iframe" src="https://pygame-web.github.io/cdn/0.9.3/empty.html"></iframe>
+
+            <iframe
+                id="iframe"
+                name="iframe"
+                src="https://pygame-web.github.io/cdn/0.9.3/empty.html"
+            ></iframe>
         </div>
     </div>
 
-    <script type="application/javascript">
-    globalThis.__canvas_resized = (self, ecw, ech) => {
-        console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
-    }
+    <script>
+        globalThis.__canvas_resized = (self, ecw, ech) => {
+            console.warn(
+                "TODO: panda3d canvas monitor",
+                self,
+                ecw,
+                ech
+            );
+        };
 
-    async function custom_onload(debug_hidden) {
-        if (typeof pyconsole !== 'undefined') pyconsole.hidden = debug_hidden;
-        if (typeof system !== 'undefined') system.hidden = debug_hidden;
-        if (typeof info !== 'undefined') info.hidden = debug_hidden;
-        if (typeof box !== 'undefined') box.hidden = debug_hidden;
-        show_infobox();
-    }
+        async function custom_onload(debug_hidden) {
+            if (typeof pyconsole !== "undefined") {
+                pyconsole.hidden = debug_hidden;
+            }
 
-    function custom_prerun(){ console.log(__FILE__, "custom_prerun") }
-    function custom_postrun(){ console.log(__FILE__, "custom_postrun") }
+            if (typeof system !== "undefined") {
+                system.hidden = debug_hidden;
+            }
 
-    function debug() {
-        python.config.debug = true
-        custom_onload(false)
-        Module.PyRun_SimpleString("shell.uptime()")
-        window_resize()
-    }
+            if (typeof info !== "undefined") {
+                info.hidden = debug_hidden;
+            }
 
-    function info_inline(data){ document.getElementById("info").innerHTML = data }
-    function info_online(url) {
-        fetch(url).then((response) => response.text()).then((html) => { info_inline(html); }).catch((error) => { console.warn(error); });
-    }
+            if (typeof box !== "undefined") {
+                box.hidden = debug_hidden;
+            }
 
-    function frame_online(url) { window.frames["iframe"].location = url; }
+            show_infobox();
+        }
+
+        function custom_prerun() {
+            console.log(__FILE__, "custom_prerun");
+        }
+
+        function custom_postrun() {
+            console.log(__FILE__, "custom_postrun");
+        }
+
+        function debug() {
+            python.config.debug = true;
+            custom_onload(false);
+            Module.PyRun_SimpleString("shell.uptime()");
+            window_resize();
+        }
+
+        function info_inline(data) {
+            document.getElementById("info").innerHTML = data;
+        }
+
+        function info_online(url) {
+            fetch(url)
+                .then((response) => response.text())
+                .then(info_inline)
+                .catch((error) => console.warn(error));
+        }
+
+        function frame_online(url) {
+            window.frames["iframe"].location = url;
+        }
+
+        window.addEventListener("resize", show_infobox);
     </script>
 </body>
 </html>
