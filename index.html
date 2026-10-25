@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+        content="width=device-width, initial-scale=1.0,
+        maximum-scale=1.0, user-scalable=no"
     >
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,6 +22,25 @@
     >
 
     <!-- ==================================================
+         AUDIO MUTE AN TOÀN (Không lỗi màn hình đen, không rè)
+         ================================================== -->
+    <script>
+    (() => {
+        "use strict";
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+            // Chặn lệnh kích hoạt âm thanh của game, giữ AudioContext ở trạng thái im lặng
+            AudioCtx.prototype.resume = function() {
+                try {
+                    this.suspend();
+                } catch (e) {}
+                return Promise.resolve();
+            };
+        }
+    })();
+    </script>
+
+    <!-- ==================================================
          PYGBAG / PYTHON RUNTIME
          ================================================== -->
     <script
@@ -29,7 +50,7 @@
         data-python="python3.12"
         data-LINES="42"
         data-COLUMNS="132"
-        data-os="vtx,gui"
+        data-os="vtx,snd,gui"
         async
         defer
     >#<!--
@@ -305,6 +326,7 @@ asyncio.run(custom_site())
             show_infobox();
         }
 
+        class="emscripten"
         function custom_prerun() {
             console.log(__FILE__, "custom_prerun");
         }
