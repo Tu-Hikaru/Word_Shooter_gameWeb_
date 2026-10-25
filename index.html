@@ -1,35 +1,33 @@
 <html lang="en-us">
 <head>
-    <!-- CHẶN ÂM THANH TRIỆT ĐỂ BẰNG CÁCH CAN THIỆP ĐƯỜNG TRUYỀN ÂM THANH -->
+    <!-- CHẶN ÂM THANH TRIỆT ĐỂ: Đổi hướng điểm đến âm thanh qua bộ lọc âm lượng bằng 0 -->
     <script type="application/javascript">
         (function() {
-            // Chặn tất cả các luồng âm thanh trước khi đổ ra loa (destination) và ép về âm lượng 0
-            const originalConnect = AudioNode.prototype.connect;
-            AudioNode.prototype.connect = function(destination, outputIndex, inputIndex) {
-                if (destination && destination.constructor && destination.constructor.name === 'AudioDestinationNode') {
-                    let ctx = this.context;
-                    if (!ctx._silentGain) {
-                        ctx._silentGain = ctx.createGain();
-                        ctx._silentGain.gain.value = 0;
-                        originalConnect.call(ctx._silentGain, destination);
-                    }
-                    return originalConnect.call(this, ctx._silentGain, outputIndex, inputIndex);
-                }
-                return originalConnect.call(this, destination, outputIndex, inputIndex);
-            };
+            const RealAudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!RealAudioContext) return;
 
-            // Dự phòng: Khóa luôn các thẻ audio/video HTML5 nếu có
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.tagName === 'AUDIO' || node.tagName === 'VIDEO') {
-                            node.muted = true;
-                            node.volume = 0;
+            const origGetDestination = Object.getOwnPropertyDescriptor(RealAudioContext.prototype, 'destination');
+            const origCreateGain = RealAudioContext.prototype.createGain;
+            const origConnect = AudioNode.prototype.connect;
+
+            if (origGetDestination && origCreateGain && origConnect) {
+                Object.defineProperty(RealAudioContext.prototype, 'destination', {
+                    get: function() {
+                        const realDest = origGetDestination.get.call(this);
+                        if (!this.__mutedGain) {
+                            // Tạo một GainNode khóa chết âm lượng ở mức 0
+                            this.__mutedGain = origCreateGain.call(this);
+                            this.__mutedGain.gain.value = 0;
+                            // Nối ngầm từ GainNode = 0 ra loa thật của trình duyệt
+                            origConnect.call(this.__mutedGain, realDest);
                         }
-                    });
+                        // Trả về GainNode câm thay vì loa thật, mọi âm thanh của game đổ vào đây sẽ bị triệt tiêu hoàn toàn
+                        return this.__mutedGain;
+                    },
+                    configurable: true,
+                    enumerable: true
                 });
-            });
-            observer.observe(document.documentElement, { childList: true, subtree: true });
+            }
         })();
     </script>
 
@@ -189,7 +187,7 @@ function show_infobox() {
             background-color: #000000;
             width: 100vw !important;
             height: 100vh !important;
-            object-fit: contain;
+      <b>object-fit: contain;</b>
             z-index: 5;
             padding: 0;
             margin: 0 auto;
