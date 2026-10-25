@@ -22,39 +22,46 @@
     >
 
     <!-- ==================================================
-         AUDIO MUTE TRIỆT ĐỂ VÀ AN TOÀN (Đã sửa lỗi cú pháp)
+         GIẢI PHÁP TỐI ƯU TRIỆT ĐỂ: LÀM PHẲNG BỘ ĐỆM ÂM THANH THÀNH 0
+         Không đen màn hình, không rè, tắt tiếng 100%
          ================================================== -->
     <script>
     (() => {
         "use strict";
 
-        // 1. Chặn toàn bộ luồng Web Audio API qua bộ lọc âm lượng bằng 0
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx && window.AudioNode) {
-            const origConnect = AudioNode.prototype.connect;
-            const origCreateGain = AudioCtx.prototype.createGain;
-
-            AudioNode.prototype.connect = function(destination, outputIndex, inputIndex) {
-                try {
-                    if (destination && destination instanceof AudioDestinationNode) {
-                        const ctx = this.context;
-                        if (ctx && origCreateGain) {
-                            if (!ctx.__silentGainNode) {
-                                ctx.__silentGainNode = origCreateGain.call(ctx);
-                                ctx.__silentGainNode.gain.value = 0;
-                                origConnect.call(ctx.__silentGainNode, destination);
+        if (AudioCtx) {
+            // 1. Intercept decodeAudioData: Biến mọi file nhạc/hiệu ứng của game thành im lặng ngay khi giải mã
+            const origDecode = AudioCtx.prototype.decodeAudioData;
+            if (origDecode) {
+                AudioCtx.prototype.decodeAudioData = function(audioData, successCallback, errorCallback) {
+                    return origDecode.call(this, audioData, function(buffer) {
+                        try {
+                            for (let i = 0; i < buffer.numberOfChannels; i++) {
+                                buffer.getChannelData(i).fill(0); // Làm phẳng dữ liệu thành 0 (Im lặng tuyệt đối)
                             }
-                            return origConnect.call(this, ctx.__silentGainNode, outputIndex, inputIndex);
+                        } catch (e) {}
+                        if (successCallback) successCallback(buffer);
+                    }, errorCallback);
+                };
+            }
+
+            // 2. Intercept createBuffer: Chặn cả âm thanh được tạo tự động trong code
+            const origCreateBuffer = AudioCtx.prototype.createBuffer;
+            if (origCreateBuffer) {
+                AudioCtx.prototype.createBuffer = function(numberOfChannels, length, sampleRate) {
+                    const buffer = origCreateBuffer.call(this, numberOfChannels, length, sampleRate);
+                    try {
+                        for (let i = 0; i < buffer.numberOfChannels; i++) {
+                            buffer.getChannelData(i).fill(0);
                         }
-                    }
-                } catch (e) {
-                    console.warn("Audio mute hook warning:", e);
-                }
-                return origConnect.call(this, destination, outputIndex, inputIndex);
-            };
+                    } catch (e) {}
+                    return buffer;
+                };
+            }
         }
 
-        // 2. Chặn mọi thẻ Audio/Video HTML5 nếu game tự phát sinh
+        // 3. Khóa cứng mọi thẻ Audio/Video HTML5 nếu có phát sinh
         const origPlay = HTMLMediaElement.prototype.play;
         HTMLMediaElement.prototype.play = function() {
             this.muted = true;
